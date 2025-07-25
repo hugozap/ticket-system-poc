@@ -1,0 +1,18 @@
+{
+  "name": "ticket-system",
+  "version": "1.0.0",
+  "main": "index.js",
+  "keywords": [],
+  "scripts": {
+    "logs": "serverless logs -f api --stage dev --tail"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "serverless-go-plugin": "^2.4.1"
+  },
+  "dependencies": {
+    "glob": "^11.0.3"
+  }
+}

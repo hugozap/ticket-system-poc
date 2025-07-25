@@ -1,0 +1,88 @@
+service: ticket-system-poc
+
+provider:
+  name: aws
+  runtime: provided.al2023
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  architecture: x86_64
+
+  environment:
+    GIN_MODE: debug
+    STAGE: ${self:provider.stage}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: 
+          - arn:aws:dynamodb:${self:provider.region}:*:table/tickets_poc
+          - arn:aws:dynamodb:${self:provider.region}:*:table/tickets_poc/index/*
+
+plugins:
+  - serverless-go-plugin
+
+custom:
+  go:
+    baseDir: .
+    binDir: .bin
+    cgo: 0 
+    cmd: 'GOOS=linux go build -ldflags="-s -w"'
+    monorepo: false 
+    supportedRuntimes: ["provided.al2023"] 
+    buildProvidedRuntimeAsBootstrap: true 
+
+functions:
+  api:
+    handler: cmd/app.go
+    events:
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors: true
+          integration: lambda-proxy 
+resources:
+  Resources:
+    TicketsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: tickets_poc
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: createdBy
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+          - AttributeName: assignedTo
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: CreatedBy
+            KeySchema:
+              - AttributeName: createdBy
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL 
+          - IndexName: AssignedTo
+            KeySchema:
+              - AttributeName: assignedTo
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
