@@ -30,6 +30,7 @@ type TicketRepository interface {
 	UpdateStatus(ctx context.Context, id string, status string) error
 	UpdateTicket(ctx context.Context, ticket *models.Ticket) error
 	UpdateAssignTo(ctx context.Context, id string, assignTo string) error
+	BulkImport(ctx context.Context, entries []models.Ticket) error
 }
 
 type ticketRepository struct {
@@ -139,6 +140,60 @@ func (tr *ticketRepository) UpdateTicket(ctx context.Context, ticket *models.Tic
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update ticket: %w", err)
+	}
+	return nil
+}
+
+func (tr *ticketRepository) BulkImport(ctx context.Context, entries []models.Ticket) error {
+	const batchSize = 40
+
+	// process in batches of batchSize
+	for i := 0; i < len(entries); i += batchSize {
+		end := i + batchSize
+		if end > len(entries) {
+			end = len(entries)
+		}
+		batch := entries[i:end]
+		err := tr.processBatch(ctx, batch)
+		if err != nil {
+			return fmt.Errorf("could not proccess batch from %d to %d", i, end)
+		}
+	}
+
+	return nil
+}
+
+func (tr *ticketRepository) processBatch(ctx context.Context, batch []models.Ticket) error {
+	var requests []types.WriteRequest
+	for _, entry := range batch {
+
+		ticketRecord := models.TicketDbRecord{
+			Ticket: entry,
+			PK:     fmt.Sprintf("#ticket#%s", entry.TicketID),
+			SK:     "details",
+		}
+
+		item, err := attributevalue.MarshalMap(ticketRecord)
+
+		if err != nil {
+			return fmt.Errorf("error marshalling record")
+		}
+
+		req := types.WriteRequest{
+			PutRequest: &types.PutRequest{
+				Item: item,
+			},
+		}
+		requests = append(requests, req)
+	}
+	input := &dynamodb.BatchWriteItemInput{
+		RequestItems: map[string][]types.WriteRequest{
+			TableName: requests,
+		},
+	}
+	_, err := tr.client.BatchWriteItem(ctx, input)
+	if err != nil {
+		return fmt.Errorf("batch write failed: %w", err)
 	}
 	return nil
 }

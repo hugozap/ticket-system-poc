@@ -2,8 +2,11 @@ package controllers
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
+	"io"
 	"log/slog"
+	"net/http"
 
 	"example.com/ticket-system/internal/models"
 	"example.com/ticket-system/internal/repositories"
@@ -12,6 +15,7 @@ import (
 
 var (
 	ErrBadRequest     = errors.New("bad request")
+	ErrImportError    = errors.New("import failure")
 	ErrCreatingTicket = errors.New("error creating ticket")
 )
 
@@ -37,13 +41,13 @@ func (tc *ticketController) CreateTicket(ctx context.Context, c *gin.Context) {
 	var req models.CreateTicketRequest
 	err := c.BindJSON(&req)
 	if err != nil {
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return
 	}
 	id, err := tc.repo.CreateTicket(ctx, req.ToTicket())
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to create ticket", "error", err)
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return
 	}
 	slog.InfoContext(ctx, "Ticket created with", "id", id)
@@ -58,7 +62,7 @@ func (tc *ticketController) GetTicketDetails(ctx context.Context, c *gin.Context
 	ticket, err := tc.repo.GetTicket(ctx, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to get ticket", "error", err)
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return
 	}
 
@@ -74,14 +78,14 @@ func (tc *ticketController) UpdateStatus(ctx context.Context, c *gin.Context) er
 		Status string `json:"status" binding:"required"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return err
 	}
 
 	err := tc.repo.UpdateStatus(ctx, id, req.Status)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to update ticket status", "error", err)
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return err
 	}
 
@@ -89,23 +93,75 @@ func (tc *ticketController) UpdateStatus(ctx context.Context, c *gin.Context) er
 	return nil
 }
 
-func (tc *ticketController) UpdateAssignTo(ctx context.Context, c *gin.Context) error {
+func (tc *ticketController) UpdateAssignTo(ctx context.Context, c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
 		Assignee string `json:"assignee" binding:"required"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
-		return err
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
+		return
 	}
 
 	err := tc.repo.UpdateAssignTo(ctx, id, req.Assignee)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to assign ticket", "error", err)
-		c.JSON(400, gin.H{"error": ErrBadRequest.Error()})
-		return err
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
+		return
 	}
 
 	c.JSON(200, gin.H{"message": "assignee updated"})
-	return nil
+}
+
+func (tc *ticketController) BulkCreate(ctx context.Context, c *gin.Context) {
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to receive file", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.Comma = ','
+	reader.TrimLeadingSpace = true
+
+	// returns lines numbers of failed records
+	badRecords := make(map[int]string)
+
+	lineNumber := 0
+	var entries []models.Ticket
+
+	//NOTE: this should be part of a service
+	for {
+		lineNumber += 1
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			slog.ErrorContext(ctx, "Error parsing ticket from CSV", "error", err)
+			continue
+		}
+
+		ticketRecord := models.BulkImportRecord{}
+		err = ticketRecord.LoadFromRecord(record)
+		if err != nil {
+			slog.ErrorContext(ctx, "Error parsing ticket from CSV", "error", err)
+			badRecords[lineNumber] = err.Error()
+			continue
+
+		}
+		entries = append(entries, ticketRecord.ToTicket())
+	}
+
+	err = tc.repo.BulkImport(ctx, entries)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to import records", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrImportError.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "OK", "entries": entries})
+
 }
