@@ -20,9 +20,10 @@ const (
 )
 
 var (
-	ErrCreatingTicket = errors.New("error creating ticket in database")
-	ErrLoadingTicket  = errors.New("error loading ticket from database")
-	ErrInvalidStatus  = errors.New("invalid status")
+	ErrCreatingTicket        = errors.New("error creating ticket in database")
+	ErrLoadingTicket         = errors.New("error loading ticket from database")
+	ErrLoadingTicketsForUser = errors.New("could not load user assigned tickets")
+	ErrInvalidStatus         = errors.New("invalid status")
 )
 
 type TicketRepository interface {
@@ -86,11 +87,7 @@ func (tr *ticketRepository) GetTicketsAssignedTo(ctx context.Context, userName s
 
 	result, err := tr.client.Query(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("%w - %w", ErrLoadingTicket, err)
-	}
-
-	if len(result.Items) == 0 {
-		return nil, fmt.Errorf("%w - no tickets found for user", ErrLoadingTicket)
+		return nil, fmt.Errorf("%w - %w", ErrLoadingTicketsForUser, err)
 	}
 
 	var ticketRecords []models.TicketDbRecord

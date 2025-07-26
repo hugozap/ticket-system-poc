@@ -53,12 +53,20 @@ func init() {
 		controller.GetTicketDetails(ctx, c)
 	})
 
+	router.GET("/ticket/assigned", func(c *gin.Context) {
+		controller.GetTicketsAssignedToSupportUser(ctx, c)
+	})
+
 	router.PATCH("/ticket/:id/status", func(c *gin.Context) {
 		controller.UpdateStatus(ctx, c)
 	})
 
 	router.PATCH("/ticket/:id/assignto", func(c *gin.Context) {
 		controller.UpdateAssignTo(ctx, c)
+	})
+
+	router.POST("/ticket/bulk-import", func(c *gin.Context) {
+		controller.BulkCreate(ctx, c)
 	})
 
 	// Catch all for debugging

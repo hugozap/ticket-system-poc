@@ -29,3 +29,8 @@ func (tr *CreateTicketRequest) ToTicket() *models.Ticket {
 		AssignedTo:  "None",
 	}
 }
+
+type AssignToRequest struct {
+	TicketID string
+	Assignee string `json:"assignee" binding:"required"`
+}

@@ -83,7 +83,7 @@ func (tc *ticketController) GetTicketsAssignedToSupportUser(ctx context.Context,
 
 	ticket, err := tc.repo.GetTicketsAssignedTo(ctx, request.UserName)
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to get ticket", "error", err)
+		slog.ErrorContext(ctx, "Failed to get tickets", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return
 	}
@@ -116,16 +116,16 @@ func (tc *ticketController) UpdateStatus(ctx context.Context, c *gin.Context) er
 }
 
 func (tc *ticketController) UpdateAssignTo(ctx context.Context, c *gin.Context) {
-	id := c.Param("id")
-	var req struct {
-		Assignee string `json:"assignee" binding:"required"`
-	}
-	if err := c.BindJSON(&req); err != nil {
+
+	var request types.AssignToRequest
+	request.TicketID = c.Param("id")
+
+	if err := c.BindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
 		return
 	}
 
-	err := tc.repo.UpdateAssignTo(ctx, id, req.Assignee)
+	err := tc.repo.UpdateAssignTo(ctx, request.TicketID, request.Assignee)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to assign ticket", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})

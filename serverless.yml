@@ -20,6 +20,7 @@ provider:
             - dynamodb:GetItem
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
+            - dynamodb:Query
           Resource: 
           - arn:aws:dynamodb:${self:provider.region}:*:table/tickets_poc
           - arn:aws:dynamodb:${self:provider.region}:*:table/tickets_poc/index/*
