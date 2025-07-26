@@ -22,11 +22,13 @@ const (
 var (
 	ErrCreatingTicket = errors.New("error creating ticket in database")
 	ErrLoadingTicket  = errors.New("error loading ticket from database")
+	ErrInvalidStatus  = errors.New("invalid status")
 )
 
 type TicketRepository interface {
 	CreateTicket(ctx context.Context, ticket *models.Ticket) (string, error)
 	GetTicket(ctx context.Context, id string) (*models.Ticket, error)
+	GetTicketsAssignedTo(ctx context.Context, userName string) ([]models.Ticket, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
 	UpdateTicket(ctx context.Context, ticket *models.Ticket) error
 	UpdateAssignTo(ctx context.Context, id string, assignTo string) error
@@ -71,6 +73,47 @@ func (tr *ticketRepository) GetTicket(ctx context.Context, id string) (*models.T
 
 }
 
+func (tr *ticketRepository) GetTicketsAssignedTo(ctx context.Context, userName string) ([]models.Ticket, error) {
+	// Assuming a GSI named "AssignedTo-index" with "AssignedTo" as the partition key exists
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(TableName),
+		IndexName:              aws.String("AssignedTo"),
+		KeyConditionExpression: aws.String("AssignedTo = :assignedTo"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":assignedTo": &types.AttributeValueMemberS{Value: userName},
+		},
+	}
+
+	result, err := tr.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("%w - %w", ErrLoadingTicket, err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("%w - no tickets found for user", ErrLoadingTicket)
+	}
+
+	var ticketRecords []models.TicketDbRecord
+
+	for _, item := range result.Items {
+		var ticketRecord models.TicketDbRecord
+		err = attributevalue.UnmarshalMap(item, &ticketRecord)
+		if err != nil {
+			return nil, fmt.Errorf("%w - %w", ErrLoadingTicket, err)
+		}
+		ticketRecords = append(ticketRecords, ticketRecord)
+	}
+
+	var tickets []models.Ticket
+	for _, record := range ticketRecords {
+		ticket := record.Ticket
+		tickets = append(tickets, ticket)
+	}
+
+	return tickets, nil
+
+}
+
 // Creates a new ticket and returns the ticket id
 func (tr *ticketRepository) CreateTicket(ctx context.Context, ticket *models.Ticket) (string, error) {
 	slog.InfoContext(ctx, "Creating Ticket", "ticket", ticket)
@@ -105,9 +148,12 @@ func (tr *ticketRepository) UpdateStatus(ctx context.Context, id string, status 
 	if err != nil {
 		return err
 	}
-	//TODO: validate possible status values
 
 	ticket.Status = models.TicketStatus(status)
+	valid := ticket.ValidateStatus()
+	if !valid {
+		return fmt.Errorf("%s - %s", ErrInvalidStatus, status)
+	}
 	return tr.UpdateTicket(ctx, ticket)
 }
 

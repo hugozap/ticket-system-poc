@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	types "example.com/ticket-system/internal/http"
 	"example.com/ticket-system/internal/models"
 	"example.com/ticket-system/internal/repositories"
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func NewTicketController(repo repositories.TicketRepository) ticketController {
 }
 
 func (tc *ticketController) CreateTicket(ctx context.Context, c *gin.Context) {
-	var req models.CreateTicketRequest
+	var req types.CreateTicketRequest
 	err := c.BindJSON(&req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
@@ -51,7 +52,7 @@ func (tc *ticketController) CreateTicket(ctx context.Context, c *gin.Context) {
 		return
 	}
 	slog.InfoContext(ctx, "Ticket created with", "id", id)
-	c.JSON(200, models.CreateTicketResponse{
+	c.JSON(200, types.CreateTicketResponse{
 		Id: id,
 	})
 }
@@ -60,6 +61,27 @@ func (tc *ticketController) GetTicketDetails(ctx context.Context, c *gin.Context
 	id := c.Param("id")
 
 	ticket, err := tc.repo.GetTicket(ctx, id)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to get ticket", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"ticket": ticket,
+	})
+
+}
+
+func (tc *ticketController) GetTicketsAssignedToSupportUser(ctx context.Context, c *gin.Context) {
+	var request types.GetTicketsAssignedToRequest
+	if err := c.ShouldBindQuery(&request); err != nil {
+		slog.ErrorContext(ctx, "Failed to read parameters", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
+		return
+	}
+
+	ticket, err := tc.repo.GetTicketsAssignedTo(ctx, request.UserName)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to get ticket", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrBadRequest.Error()})
