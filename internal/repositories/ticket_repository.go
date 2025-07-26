@@ -75,11 +75,12 @@ func (tr *ticketRepository) GetTicket(ctx context.Context, id string) (*models.T
 }
 
 func (tr *ticketRepository) GetTicketsAssignedTo(ctx context.Context, userName string) ([]models.Ticket, error) {
+	slog.InfoContext(ctx, "getTicketAssignedTo", "userName", userName)
 	// Assuming a GSI named "AssignedTo-index" with "AssignedTo" as the partition key exists
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(TableName),
 		IndexName:              aws.String("AssignedTo"),
-		KeyConditionExpression: aws.String("AssignedTo = :assignedTo"),
+		KeyConditionExpression: aws.String("assignedTo = :assignedTo"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":assignedTo": &types.AttributeValueMemberS{Value: userName},
 		},
@@ -101,7 +102,7 @@ func (tr *ticketRepository) GetTicketsAssignedTo(ctx context.Context, userName s
 		ticketRecords = append(ticketRecords, ticketRecord)
 	}
 
-	var tickets []models.Ticket
+	var tickets []models.Ticket = []models.Ticket{}
 	for _, record := range ticketRecords {
 		ticket := record.Ticket
 		tickets = append(tickets, ticket)
@@ -157,6 +158,7 @@ func (tr *ticketRepository) UpdateStatus(ctx context.Context, id string, status 
 func (tr *ticketRepository) UpdateAssignTo(ctx context.Context, id string, assignTo string) error {
 	ticket, err := tr.GetTicket(ctx, id)
 	if err != nil {
+		slog.ErrorContext(ctx, "UpdateAssignTo", "error", err)
 		return err
 	}
 	ticket.AssignedTo = assignTo
@@ -174,6 +176,7 @@ func (tr *ticketRepository) UpdateTicket(ctx context.Context, ticket *models.Tic
 	}
 	item, err := attributevalue.MarshalMap(ticketRecord)
 	if err != nil {
+		slog.ErrorContext(ctx, "UpdateTicket MarshallMap", "error", err)
 		return fmt.Errorf("failed to marshal ticket: %w", err)
 	}
 
@@ -182,6 +185,7 @@ func (tr *ticketRepository) UpdateTicket(ctx context.Context, ticket *models.Tic
 		Item:      item,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "PutItem", "error", err)
 		return fmt.Errorf("failed to update ticket: %w", err)
 	}
 	return nil
@@ -199,6 +203,7 @@ func (tr *ticketRepository) BulkImport(ctx context.Context, entries []models.Tic
 		batch := entries[i:end]
 		err := tr.processBatch(ctx, batch)
 		if err != nil {
+			slog.ErrorContext(ctx, "Error processing batch", "error", err)
 			return fmt.Errorf("could not proccess batch from %d to %d", i, end)
 		}
 	}
